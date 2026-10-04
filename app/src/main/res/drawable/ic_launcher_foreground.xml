@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer subtle glow halo -->
+    <path
+        android:pathData="M54,28 A26,26 0 1,1 53.9,28"
+        android:fillColor="#15FFFFFF" />
+    <!-- White brand circular disc -->
+    <path
+        android:pathData="M54,32 A22,22 0 1,1 53.9,32"
+        android:fillColor="#FFFFFF" />
+    <!-- Inner iconic play triangle glyph in deep obsidian -->
+    <path
+        android:pathData="M48,42 L65,54 L48,66 Z"
+        android:fillColor="#0A0A0C" />
+    <!-- Subtle star sparkle at top right representing cinematic discovery -->
+    <path
+        android:pathData="M76,33 L78,35 L80,33 L78,31 Z"
+        android:fillColor="#FFFFFF" />
+</vector>
