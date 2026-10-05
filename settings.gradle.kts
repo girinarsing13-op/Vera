@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "VEYRA"
+rootProject.name = "Vera"
 
 include(":app")

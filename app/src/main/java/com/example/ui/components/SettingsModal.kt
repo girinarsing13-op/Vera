@@ -336,7 +336,7 @@ fun SettingsModal(
                 HorizontalDivider(color = VeyraBorderSubtle)
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // About VEYRA
+                // About Vera
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -358,7 +358,7 @@ fun SettingsModal(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "About VEYRA",
+                            text = "About Vera",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = VeyraWhite

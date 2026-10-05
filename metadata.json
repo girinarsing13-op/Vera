@@ -1,5 +1,5 @@
 {
-  "name": "VEYRA",
+  "name": "Vera",
   "description": "Cinematic discovery engine to find your next film with live catalog search, warp animations, and tailored recommendations.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

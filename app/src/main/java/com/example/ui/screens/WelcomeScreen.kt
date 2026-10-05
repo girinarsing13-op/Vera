@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.HeaderBar
 import com.example.data.model.DiscoveryConstants
+import com.example.data.repository.CuratedCatalogData
 import com.example.ui.theme.VeyraAmber
 import com.example.ui.theme.VeyraBlack
 import com.example.ui.theme.VeyraBorder
@@ -139,19 +143,16 @@ fun WelcomeScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 3D Motion Poster Carousel with staggered entrance animation
-            if (motionPosters.isNotEmpty()) {
-                MotionPosterCarousel(
-                    items = motionPosters,
-                    onSelectMedia = onSelectMedia,
-                    onPlayTick = onPlayTick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 24.dp)
-                )
-            } else {
-                Spacer(modifier = Modifier.height(4.dp))
-            }
+            // 3D Motion Poster Carousel with staggered entrance animation (Guaranteed rich showcase)
+            val showcaseList = if (motionPosters.isNotEmpty()) motionPosters else CuratedCatalogData.getShowcaseMedia()
+            MotionPosterCarousel(
+                items = showcaseList,
+                onSelectMedia = onSelectMedia,
+                onPlayTick = onPlayTick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+            )
 
             // Main Configuration Card
             Box(
@@ -579,12 +580,14 @@ fun WelcomeScreen(
 
             // Footer
             Text(
-                text = "VEYRA • Minimalist Apple-inspired Cinematic Engine.",
+                text = "Vera • Minimalist Apple-inspired Cinematic Engine.",
                 fontSize = 11.sp,
                 color = VeyraTextMuted,
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            // Extra bottom scroll clearance so content/buttons are completely above the floating navigation bar
+            Spacer(modifier = Modifier.height(130.dp))
+            Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
     }
 }

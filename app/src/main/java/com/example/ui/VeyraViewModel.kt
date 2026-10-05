@@ -157,9 +157,9 @@ class VeyraViewModel(application: Application) : AndroidViewModel(application) {
     private val _isWarpTargetLocked = MutableStateFlow(false)
     val isWarpTargetLocked: StateFlow<Boolean> = _isWarpTargetLocked.asStateFlow()
 
-    // 3D Motion Carousel items (curated fallbacks + live discovery showcase)
+    // 3D Motion Carousel items (curated multi-era showcase + live discovery refresh)
     private val _motionPosters = MutableStateFlow<List<MediaItem>>(
-        catalogRepository.getCuratedFallbacks().take(5)
+        catalogRepository.getShowcaseMedia()
     )
     val motionPosters: StateFlow<List<MediaItem>> = _motionPosters.asStateFlow()
 
@@ -203,6 +203,18 @@ class VeyraViewModel(application: Application) : AndroidViewModel(application) {
     init {
         if (!_isOnboardingActive.value) {
             playBrandIntro()
+        }
+        refreshShowcasePosters()
+    }
+
+    private fun refreshShowcasePosters() {
+        viewModelScope.launch {
+            try {
+                val dynamicShowcase = catalogRepository.fetchShowcasePosters()
+                if (dynamicShowcase.isNotEmpty()) {
+                    _motionPosters.value = dynamicShowcase
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -393,12 +405,13 @@ class VeyraViewModel(application: Application) : AndroidViewModel(application) {
             _warpCandidatePosters.value = initialSeed
             _warpWinnerItem.value = null
 
-            // Fetch catalog
+            // Fetch catalog across all cinema eras
             val pool = catalogRepository.fetchCatalog(
                 typeFilter = _currentTypeFilter.value,
                 region = _selectedRegion.value,
                 language = _selectedLanguage.value,
-                selectedPlatforms = _selectedPlatforms.value
+                selectedPlatforms = _selectedPlatforms.value,
+                selectedEra = _selectedEra.value
             )
 
             val excludedIds = movieRepository.getExcludedIds()
@@ -430,23 +443,24 @@ class VeyraViewModel(application: Application) : AndroidViewModel(application) {
             // Apply pick mode sorting / filtering
             var sorted = available.toMutableList()
             when (_selectedPickMode.value) {
+                "🎲 Random" -> sorted.shuffle()
                 "🔥 Trending" -> sorted.sortByDescending { it.popularity }
                 "⭐ Top Rated" -> sorted.sortByDescending { it.rating }
                 "❤️ Popular" -> sorted.sortByDescending { it.popularity }
                 "💎 Hidden Gems" -> {
-                    val gems = sorted.filter { it.rating >= 7.5 && it.popularity < 45 }
+                    val gems = sorted.filter { it.rating >= 7.3 && it.popularity < 65 }
                     if (gems.isNotEmpty()) sorted = gems.toMutableList()
                 }
                 "✨ Underrated" -> {
-                    val under = sorted.filter { it.rating >= 7.0 && it.popularity < 35 }
+                    val under = sorted.filter { it.rating >= 7.0 && it.popularity < 55 }
                     if (under.isNotEmpty()) sorted = under.toMutableList()
                 }
                 "🏆 Critically Acclaimed" -> {
-                    val acclaimed = sorted.filter { it.rating >= 8.2 }
+                    val acclaimed = sorted.filter { it.rating >= 8.0 }
                     if (acclaimed.isNotEmpty()) sorted = acclaimed.toMutableList()
                 }
                 "🎬 Cult Favorites" -> {
-                    val cult = sorted.filter { it.rating >= 7.8 && it.popularity < 50 }
+                    val cult = sorted.filter { it.rating >= 7.5 && (it.year < 2015 || it.popularity < 75) }
                     if (cult.isNotEmpty()) sorted = cult.toMutableList()
                 }
                 "⚡ New Releases" -> {
@@ -463,7 +477,25 @@ class VeyraViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            val topSlice = sorted.take(maxOf(5, sorted.size / 2))
+            // Strict format adherence & balanced movie/series distribution
+            val candidatePool: List<MediaItem> = when (_currentTypeFilter.value) {
+                "Movie" -> sorted.filter { it.type == "Movie" }.ifEmpty { sorted }
+                "Series" -> sorted.filter { it.type == "Series" }.ifEmpty { sorted }
+                else -> {
+                    // "all" -> strong movie presence (82% movies, 18% series), preventing TV series domination
+                    val movies = sorted.filter { it.type == "Movie" }
+                    val series = sorted.filter { it.type == "Series" }
+                    if (movies.isNotEmpty() && series.isNotEmpty()) {
+                        if (Random.nextFloat() < 0.82f) movies else series
+                    } else if (movies.isNotEmpty()) {
+                        movies
+                    } else {
+                        sorted
+                    }
+                }
+            }
+
+            val topSlice = candidatePool.take(maxOf(6, candidatePool.size / 2))
             val winner = topSlice[Random.nextInt(topSlice.size)]
 
             // Record smart spin queue

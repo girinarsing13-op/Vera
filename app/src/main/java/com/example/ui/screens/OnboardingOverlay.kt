@@ -345,7 +345,7 @@ fun OnboardingOverlay(
                 label = "welcome_screens"
             ) { currentStep ->
                 when (currentStep) {
-                    // SCREEN 1: Big VERA logo & full name with 3D counter-rotating rings
+                    // SCREEN 1: Big Vera logo & full name with 3D counter-rotating rings
                     1 -> {
                         Box(
                             modifier = Modifier.fillMaxWidth(),
@@ -389,7 +389,7 @@ fun OnboardingOverlay(
                                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    listOf("V", "E", "R", "A").forEachIndexed { idx, letter ->
+                                    listOf("V", "e", "r", "a").forEachIndexed { idx, letter ->
                                         val letterFloat = sin(timeSeconds + idx * 0.9f) * 3f
                                         Text(
                                             text = letter,

@@ -63,7 +63,7 @@ fun HeaderBar(
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "VEYRA",
+                    contentDescription = "Vera",
                     tint = VeyraBlack,
                     modifier = Modifier
                         .size(16.dp)
@@ -72,7 +72,7 @@ fun HeaderBar(
             }
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = "VEYRA",
+                text = "Vera",
                 color = VeyraWhite,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,

@@ -36,14 +36,18 @@ class CatalogRepository {
     private val cache = ConcurrentHashMap<String, List<MediaItem>>()
     private val detailsCache = ConcurrentHashMap<String, MediaItem>()
 
+    /**
+     * Fetches a balanced multi-era cinema catalog across the entire history of cinema (1940s to 2020s),
+     * strictly respecting the typeFilter ("all", "Movie", "Series") and selectedEra.
+     */
     suspend fun fetchCatalog(
         typeFilter: String,
         region: String,
         language: String,
-        selectedPlatforms: Set<String>
+        selectedPlatforms: Set<String>,
+        selectedEra: String = "Any Era"
     ): List<MediaItem> = withContext(Dispatchers.IO) {
         val candidateMap = mutableMapOf<String, MediaItem>()
-        val pagesToFetch = listOf(1, 2, 3, 4, 5, 6)
 
         val fetchMovies = typeFilter.equals("all", ignoreCase = true) || typeFilter.equals("Movie", ignoreCase = true)
         val fetchSeries = typeFilter.equals("all", ignoreCase = true) || typeFilter.equals("Series", ignoreCase = true)
@@ -56,60 +60,64 @@ class CatalogRepository {
         val withProviders = if (providerIds.isNotEmpty()) providerIds.joinToString("|") else null
         val watchRegionParam = if (withProviders != null) region else null
         val activePlatformsList = selectedPlatforms.toList()
-
         val langParam = if (language != "ANY") language else null
 
-        // Fetch movies
+        // 1. FETCH BALANCED MOVIES (Multiple Eras)
         if (fetchMovies) {
-            for (page in pagesToFetch) {
-                val cacheKey = "m_${region}_${language}_${page}_${withProviders ?: ""}"
-                val cached = cache[cacheKey]
-                if (cached != null) {
-                    cached.forEach { candidateMap[it.id] = it }
-                    continue
-                }
+            when (selectedEra) {
+                "2020s" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateGte = "2020-01-01", pages = listOf(1, 2, 3))
 
-                try {
-                    val resp = api.discoverMovies(
-                        page = page,
-                        region = region,
-                        withProviders = withProviders,
-                        watchRegion = watchRegionParam,
-                        withLanguage = langParam
-                    )
-                    val pageItems = resp.results.mapNotNull { m ->
-                        val posterPath = m.posterPath ?: return@mapNotNull null
-                        val year = m.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull() ?: 2023
-                        val genres = m.genreIds.mapNotNull { DiscoveryConstants.TMDB_GENRES[it] }
-                        MediaItem(
-                            id = "m_${m.id}",
-                            tmdbId = m.id,
-                            title = m.title ?: "Untitled",
-                            type = "Movie",
-                            year = year,
-                            duration = "2h",
-                            rating = m.voteAverage ?: 7.0,
-                            popularity = m.popularity ?: 50.0,
-                            trending = (m.popularity ?: 0.0) > 75.0,
-                            originalLanguage = m.originalLanguage ?: "en",
-                            country = null,
-                            genres = genres,
-                            platforms = activePlatformsList,
-                            synopsis = m.overview?.takeIf { it.isNotBlank() } ?: "No synopsis available.",
-                            poster = "https://image.tmdb.org/t/p/w500$posterPath"
-                        )
-                    }
-                    if (pageItems.isNotEmpty()) {
-                        cache[cacheKey] = pageItems
+                "2010s" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateGte = "2010-01-01", releaseDateLte = "2019-12-31", pages = listOf(1, 2, 3))
+
+                "2000s" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateGte = "2000-01-01", releaseDateLte = "2009-12-31", pages = listOf(1, 2, 3))
+
+                "1990s" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateGte = "1990-01-01", releaseDateLte = "1999-12-31", pages = listOf(1, 2, 3))
+
+                "1980s" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateGte = "1980-01-01", releaseDateLte = "1989-12-31", pages = listOf(1, 2, 3))
+
+                "1970s" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateGte = "1970-01-01", releaseDateLte = "1979-12-31", pages = listOf(1, 2))
+
+                "Before 1970" -> fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                    releaseDateLte = "1969-12-31", voteCountGte = 80, sortBy = "vote_average.desc", pages = listOf(1, 2))
+
+                else -> {
+                    // "Any Era" -> True balanced multi-era cinema catalog!
+                    // Slice A: Top Rated of all time (covers legendary golden cinema 1940-2020s)
+                    try {
+                        val topResp = api.getTopRatedMovies(page = 1, region = region)
+                        val pageItems = mapMovieResults(topResp.results, activePlatformsList)
                         pageItems.forEach { candidateMap[it.id] = it }
-                    }
-                } catch (_: Exception) {}
+                    } catch (_: Exception) {}
+
+                    // Slice B: 20th Century Classics (pre-2000: 1950s, 60s, 70s, 80s, 90s)
+                    fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                        releaseDateLte = "1999-12-31", voteCountGte = 250, sortBy = "vote_average.desc", pages = listOf(1))
+
+                    // Slice C: 1980s & 1990s acclaimed & popular
+                    fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                        releaseDateGte = "1980-01-01", releaseDateLte = "1999-12-31", sortBy = "popularity.desc", pages = listOf(1))
+
+                    // Slice D: 2000s & 2010s modern classics
+                    fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                        releaseDateGte = "2000-01-01", releaseDateLte = "2019-12-31", voteCountGte = 600, sortBy = "vote_average.desc", pages = listOf(1))
+
+                    // Slice E: Contemporary & Recent (2020-2026)
+                    fetchMovieSlice(candidateMap, region, langParam, withProviders, watchRegionParam, activePlatformsList,
+                        releaseDateGte = "2020-01-01", sortBy = "popularity.desc", pages = listOf(1, 2))
+                }
             }
         }
 
-        // Fetch TV series
+        // 2. FETCH TV SERIES (Only when requested, without letting them dominate)
         if (fetchSeries) {
-            for (page in pagesToFetch) {
+            val seriesPages = if (typeFilter.equals("Series", ignoreCase = true)) listOf(1, 2, 3) else listOf(1)
+            for (page in seriesPages) {
                 val cacheKey = "tv_${region}_${language}_${page}_${withProviders ?: ""}"
                 val cached = cache[cacheKey]
                 if (cached != null) {
@@ -154,12 +162,112 @@ class CatalogRepository {
             }
         }
 
-        // If network failed or catalog is empty, inject curated fallback catalog
-        if (candidateMap.isEmpty()) {
-            getCuratedFallbacks().forEach { candidateMap[it.id] = it }
+        // Inject curated fallback catalog (which spans 1940s, 50s, 60s, 70s, 80s, 90s, 2000s, 2010s, 2020s)
+        val curated = CuratedCatalogData.getAllCuratedMedia()
+        for (item in curated) {
+            if (fetchMovies && item.type == "Movie") {
+                candidateMap.putIfAbsent(item.id, item)
+            } else if (fetchSeries && item.type == "Series") {
+                candidateMap.putIfAbsent(item.id, item)
+            }
         }
 
         candidateMap.values.toList()
+    }
+
+    private suspend fun fetchMovieSlice(
+        destination: MutableMap<String, MediaItem>,
+        region: String,
+        language: String?,
+        withProviders: String?,
+        watchRegion: String?,
+        activePlatformsList: List<String>,
+        releaseDateGte: String? = null,
+        releaseDateLte: String? = null,
+        voteCountGte: Int? = null,
+        sortBy: String? = null,
+        pages: List<Int>
+    ) {
+        for (page in pages) {
+            val cacheKey = "m_${region}_${language}_${page}_${releaseDateGte}_${releaseDateLte}_${sortBy}"
+            val cached = cache[cacheKey]
+            if (cached != null) {
+                cached.forEach { destination[it.id] = it }
+                continue
+            }
+
+            try {
+                val resp = api.discoverMovies(
+                    page = page,
+                    sortBy = sortBy,
+                    voteCountGte = voteCountGte,
+                    releaseDateGte = releaseDateGte,
+                    releaseDateLte = releaseDateLte,
+                    region = region,
+                    withProviders = withProviders,
+                    watchRegion = watchRegion,
+                    withLanguage = language
+                )
+                val pageItems = mapMovieResults(resp.results, activePlatformsList)
+                if (pageItems.isNotEmpty()) {
+                    cache[cacheKey] = pageItems
+                    pageItems.forEach { destination[it.id] = it }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun mapMovieResults(
+        results: List<com.example.data.model.TmdbMovieResult>,
+        activePlatformsList: List<String>
+    ): List<MediaItem> {
+        return results.mapNotNull { m ->
+            val posterPath = m.posterPath ?: return@mapNotNull null
+            val year = m.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull() ?: 2023
+            val genres = m.genreIds.mapNotNull { DiscoveryConstants.TMDB_GENRES[it] }
+            MediaItem(
+                id = "m_${m.id}",
+                tmdbId = m.id,
+                title = m.title ?: "Untitled",
+                type = "Movie",
+                year = year,
+                duration = "2h",
+                rating = m.voteAverage ?: 7.0,
+                popularity = m.popularity ?: 50.0,
+                trending = (m.popularity ?: 0.0) > 75.0,
+                originalLanguage = m.originalLanguage ?: "en",
+                country = null,
+                genres = genres,
+                platforms = activePlatformsList,
+                synopsis = m.overview?.takeIf { it.isNotBlank() } ?: "No synopsis available.",
+                poster = "https://image.tmdb.org/t/p/w500$posterPath"
+            )
+        }
+    }
+
+    /**
+     * Home Screen Showcase Posters: A diverse, high-appeal, multi-era cinematic showcase.
+     */
+    fun getShowcaseMedia(): List<MediaItem> = CuratedCatalogData.getShowcaseMedia()
+
+    suspend fun fetchShowcasePosters(): List<MediaItem> = withContext(Dispatchers.IO) {
+        val staticShowcase = CuratedCatalogData.getShowcaseMedia()
+        try {
+            val topResp = api.getTopRatedMovies(page = 1)
+            val popResp = api.getPopularMovies(page = 1)
+            val dynamicItems = (mapMovieResults(topResp.results, emptyList()) + mapMovieResults(popResp.results, emptyList()))
+                .filter { it.poster.isNotBlank() && it.rating >= 7.8 }
+                .distinctBy { it.id }
+
+            if (dynamicItems.isNotEmpty()) {
+                // Mix static all-time classics with dynamic top rated
+                (staticShowcase.take(6) + dynamicItems.take(8)).distinctBy { it.id }
+            } else {
+                staticShowcase
+            }
+        } catch (_: Exception) {
+            staticShowcase
+        }
     }
 
     suspend fun fetchDetailedMetadata(item: MediaItem, region: String = "IN"): MediaItem = withContext(Dispatchers.IO) {
@@ -167,7 +275,6 @@ class CatalogRepository {
         val cached = detailsCache[cacheKey]
         if (cached != null) return@withContext cached
 
-        // 1. Fetch real watch provider information for the specified region
         val providersList = mutableListOf<WatchProvider>()
         var watchLink: String? = null
 
@@ -177,108 +284,108 @@ class CatalogRepository {
             } else {
                 api.getTvWatchProviders(item.tmdbId)
             }
-            val countryData = wpResp.results[region] ?: wpResp.results["IN"]
-            if (countryData != null) {
-                watchLink = countryData.link
-                val seenNames = mutableSetOf<String>()
 
-                fun addProviders(list: List<TmdbProviderInfo>?, type: String) {
-                    list?.forEach { p ->
-                        val cleanName = cleanProviderName(p.providerName)
-                        if (seenNames.add(cleanName.lowercase())) {
-                            val logo = p.logoPath?.let { "https://image.tmdb.org/t/p/w200$it" }
-                            providersList.add(
-                                WatchProvider(
-                                    id = p.providerId,
-                                    name = cleanName,
-                                    logoUrl = logo,
-                                    type = type,
-                                    link = countryData.link
-                                )
-                            )
-                        }
-                    }
+            val regInfo: com.example.data.model.TmdbCountryWatchProviders? = wpResp.results[region]
+                ?: wpResp.results["US"]
+                ?: wpResp.results.values.firstOrNull()
+
+            if (regInfo != null) {
+                watchLink = regInfo.link
+                regInfo.flatrate?.forEach { p ->
+                    providersList.add(
+                        WatchProvider(
+                            id = p.providerId,
+                            name = cleanProviderName(p.providerName),
+                            logoUrl = "https://image.tmdb.org/t/p/w154${p.logoPath}",
+                            type = "Stream",
+                            link = regInfo.link
+                        )
+                    )
                 }
-
-                // Subscription streaming (flatrate) first
-                addProviders(countryData.flatrate, "Stream")
-                // Free streaming / ads
-                addProviders(countryData.free, "Free")
-                addProviders(countryData.ads, "Free with ads")
-                // Rent
-                addProviders(countryData.rent, "Rent")
-                // Buy
-                addProviders(countryData.buy, "Buy")
+                regInfo.free?.forEach { p ->
+                    providersList.add(
+                        WatchProvider(
+                            id = p.providerId,
+                            name = cleanProviderName(p.providerName),
+                            logoUrl = "https://image.tmdb.org/t/p/w154${p.logoPath}",
+                            type = "Free",
+                            link = regInfo.link
+                        )
+                    )
+                }
+                regInfo.rent?.forEach { p ->
+                    providersList.add(
+                        WatchProvider(
+                            id = p.providerId,
+                            name = cleanProviderName(p.providerName),
+                            logoUrl = "https://image.tmdb.org/t/p/w154${p.logoPath}",
+                            type = "Rent",
+                            link = regInfo.link
+                        )
+                    )
+                }
+                regInfo.buy?.forEach { p ->
+                    providersList.add(
+                        WatchProvider(
+                            id = p.providerId,
+                            name = cleanProviderName(p.providerName),
+                            logoUrl = "https://image.tmdb.org/t/p/w154${p.logoPath}",
+                            type = "Buy",
+                            link = regInfo.link
+                        )
+                    )
+                }
             }
-        } catch (e: Exception) {
-            android.util.Log.e("CatalogRepository", "Watch providers fetch error for ${item.id}", e)
-        }
+        } catch (_: Exception) {}
 
-        val platformsList = if (providersList.isNotEmpty()) {
-            providersList.map { it.name }
-        } else {
-            emptyList()
-        }
+        var directorName: String? = item.director
+        var topCast: List<String> = item.cast
+        var durationStr = item.duration
+        var seasonCount = item.numberOfSeasons
+        var episodeCount = item.numberOfEpisodes
+        var seasonsList: List<SeasonInfo> = item.seasons
 
         try {
             if (item.type == "Movie") {
                 val details = api.getMovieDetails(item.tmdbId)
-                val hrs = (details.runtime ?: 120) / 60
-                val mins = (details.runtime ?: 120) % 60
-                val durationStr = if (hrs > 0) "${hrs}h ${mins}m" else "${mins}m"
-                val country = details.productionCountries.firstOrNull()?.name
-                val director = details.credits?.crew?.firstOrNull { it.job == "Director" }?.name
-                val castList = details.credits?.cast?.take(4)?.mapNotNull { it.name } ?: emptyList()
-
-                val enriched = item.copy(
-                    duration = durationStr,
-                    country = country,
-                    director = director,
-                    cast = castList,
-                    platforms = platformsList,
-                    watchProviders = providersList,
-                    watchLink = watchLink
-                )
-                detailsCache[cacheKey] = enriched
-                enriched
+                if (details.runtime != null && details.runtime > 0) {
+                    val hrs = details.runtime / 60
+                    val mins = details.runtime % 60
+                    durationStr = if (hrs > 0) "${hrs}h ${mins}m" else "${mins}m"
+                }
+                directorName = details.credits?.crew?.firstOrNull { it.job == "Director" }?.name ?: directorName
+                topCast = details.credits?.cast?.take(5)?.mapNotNull { it.name } ?: topCast
             } else {
-                val details = api.getTvDetails(item.tmdbId)
-                val seasonsCount = details.numberOfSeasons ?: (details.seasons?.size ?: 1)
-                val episodesCount = details.numberOfEpisodes ?: (seasonsCount * 8)
-                val country = details.productionCountries.firstOrNull()?.name
-                val castList = details.credits?.cast?.take(4)?.mapNotNull { it.name } ?: emptyList()
-                val seasons = details.seasons?.filter { it.seasonNumber > 0 }?.map {
+                val tvDetails = api.getTvDetails(item.tmdbId)
+                seasonCount = tvDetails.numberOfSeasons ?: seasonCount
+                episodeCount = tvDetails.numberOfEpisodes ?: episodeCount
+                durationStr = "$seasonCount Season${if (seasonCount > 1) "s" else ""}"
+                topCast = tvDetails.credits?.cast?.take(5)?.mapNotNull { it.name } ?: topCast
+                seasonsList = tvDetails.seasons?.map { s ->
                     SeasonInfo(
-                        seasonNumber = it.seasonNumber,
-                        name = it.name ?: "Season ${it.seasonNumber}",
-                        episodeCount = it.episodeCount ?: 8,
-                        overview = it.overview
+                        seasonNumber = s.seasonNumber,
+                        name = s.name ?: "Season ${s.seasonNumber}",
+                        episodeCount = s.episodeCount ?: 0,
+                        overview = s.overview
                     )
-                } ?: emptyList()
-
-                val enriched = item.copy(
-                    numberOfSeasons = seasonsCount,
-                    numberOfEpisodes = episodesCount,
-                    duration = "$seasonsCount Seasons • $episodesCount Episodes",
-                    country = country,
-                    cast = castList,
-                    seasons = seasons,
-                    platforms = platformsList,
-                    watchProviders = providersList,
-                    watchLink = watchLink
-                )
-                detailsCache[cacheKey] = enriched
-                enriched
+                } ?: seasonsList
             }
-        } catch (_: Exception) {
-            val enriched = item.copy(
-                platforms = platformsList,
-                watchProviders = providersList,
-                watchLink = watchLink
-            )
-            detailsCache[cacheKey] = enriched
-            enriched
-        }
+        } catch (_: Exception) {}
+
+        val distinctProviders = providersList.distinctBy { "${it.name}_${it.type}" }
+
+        val enriched = item.copy(
+            duration = durationStr,
+            director = directorName,
+            cast = topCast,
+            watchProviders = distinctProviders,
+            watchLink = watchLink,
+            numberOfSeasons = seasonCount,
+            numberOfEpisodes = episodeCount,
+            seasons = seasonsList
+        )
+        detailsCache[cacheKey] = enriched
+        enriched
     }
 
     private fun cleanProviderName(raw: String): String {
@@ -295,354 +402,7 @@ class CatalogRepository {
         }
     }
 
-    fun getCuratedFallbacks(): List<MediaItem> = listOf(
-        MediaItem(
-            id = "m_157336",
-            tmdbId = 157336,
-            title = "Interstellar",
-            type = "Movie",
-            year = 2014,
-            duration = "2h 49m",
-            rating = 8.7,
-            popularity = 95.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Sci-Fi", "Drama", "Adventure"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "The adventures of a group of explorers who make use of a newly discovered wormhole to surpass the limitations on human space travel and conquer the vast distances involved in an interstellar voyage.",
-            poster = "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
-            director = "Christopher Nolan",
-            cast = listOf("Matthew McConaughey", "Anne Hathaway", "Jessica Chastain", "Michael Caine")
-        ),
-        MediaItem(
-            id = "m_27205",
-            tmdbId = 27205,
-            title = "Inception",
-            type = "Movie",
-            year = 2010,
-            duration = "2h 28m",
-            rating = 8.8,
-            popularity = 92.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Action", "Sci-Fi", "Thriller"),
-            platforms = listOf("Netflix", "Prime Video"),
-            synopsis = "Cobb, a skilled thief who commits corporate espionage by infiltrating the subconscious of his targets, is offered a chance to regain his old life as payment for a task considered to be impossible: \"inception\".",
-            poster = "https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg",
-            director = "Christopher Nolan",
-            cast = listOf("Leonardo DiCaprio", "Joseph Gordon-Levitt", "Elliot Page", "Tom Hardy")
-        ),
-        MediaItem(
-            id = "m_1726",
-            tmdbId = 1726,
-            title = "Iron Man",
-            type = "Movie",
-            year = 2008,
-            duration = "2h 6m",
-            rating = 7.6,
-            popularity = 89.0,
-            trending = false,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Action", "Sci-Fi", "Adventure"),
-            platforms = listOf("Disney+ Hotstar"),
-            synopsis = "After being held captive in an Afghan cave, billionaire engineer Tony Stark creates a unique weaponized suit of armor to fight evil.",
-            poster = "https://image.tmdb.org/t/p/w500/78lPtwv72eTNqFW9COBYI0dWDJa.jpg",
-            director = "Jon Favreau",
-            cast = listOf("Robert Downey Jr.", "Gwyneth Paltrow", "Terrence Howard", "Jeff Bridges")
-        ),
-        MediaItem(
-            id = "m_150540",
-            tmdbId = 150540,
-            title = "Inside Out",
-            type = "Movie",
-            year = 2015,
-            duration = "1h 35m",
-            rating = 7.9,
-            popularity = 85.0,
-            trending = false,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Animation", "Family", "Adventure", "Comedy"),
-            platforms = listOf("Disney+ Hotstar"),
-            synopsis = "Growing up can be a bumpy road, and it is no exception for Riley, who is uprooted from her Midwest life when her father starts a new job in San Francisco.",
-            poster = "https://image.tmdb.org/t/p/w500/2H1TmgdfNbfMqqiqzeuvneG04qu.jpg",
-            director = "Pete Docter",
-            cast = listOf("Amy Poehler", "Phyllis Smith", "Richard Kind", "Bill Hader")
-        ),
-        MediaItem(
-            id = "m_16869",
-            tmdbId = 16869,
-            title = "Inglourious Basterds",
-            type = "Movie",
-            year = 2009,
-            duration = "2h 33m",
-            rating = 8.2,
-            popularity = 87.0,
-            trending = false,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama", "Thriller", "War"),
-            platforms = listOf("Netflix", "Prime Video"),
-            synopsis = "In Nazi-occupied France during World War II, a group of Jewish-American soldiers known as The Basterds are chosen specifically to spread fear throughout the Third Reich.",
-            poster = "https://image.tmdb.org/t/p/w500/7sfbEnaARXDD5Km007qsHQM0v01.jpg",
-            director = "Quentin Tarantino",
-            cast = listOf("Brad Pitt", "Christoph Waltz", "Melanie Laurent", "Michael Fassbender")
-        ),
-        MediaItem(
-            id = "m_414906",
-            tmdbId = 414906,
-            title = "The Batman",
-            type = "Movie",
-            year = 2022,
-            duration = "2h 56m",
-            rating = 7.7,
-            popularity = 93.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Crime", "Mystery", "Thriller", "Action"),
-            platforms = listOf("Netflix", "Prime Video", "Apple TV"),
-            synopsis = "In his second year of fighting crime, Batman uncovers corruption in Gotham City that connects to his own family while facing a serial killer known as the Riddler.",
-            poster = "https://image.tmdb.org/t/p/w500/74xTEgt7R36Fpooo50r9T25onhq.jpg",
-            director = "Matt Reeves",
-            cast = listOf("Robert Pattinson", "Zoe Kravitz", "Paul Dano", "Colin Farrell")
-        ),
-        MediaItem(
-            id = "m_272",
-            tmdbId = 272,
-            title = "Batman Begins",
-            type = "Movie",
-            year = 2005,
-            duration = "2h 20m",
-            rating = 7.7,
-            popularity = 88.0,
-            trending = false,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Action", "Crime", "Drama"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "Driven by tragedy, billionaire Bruce Wayne dedicates his life to uncovering and defeating the corruption that plagues his home of Gotham City.",
-            poster = "https://image.tmdb.org/t/p/w500/4MpN4Cwhv4agFOEkzgkV22709iz.jpg",
-            director = "Christopher Nolan",
-            cast = listOf("Christian Bale", "Michael Caine", "Liam Neeson", "Katie Holmes")
-        ),
-        MediaItem(
-            id = "m_155",
-            tmdbId = 155,
-            title = "The Dark Knight",
-            type = "Movie",
-            year = 2008,
-            duration = "2h 32m",
-            rating = 8.5,
-            popularity = 97.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama", "Action", "Crime", "Thriller"),
-            platforms = listOf("Netflix", "Prime Video", "Apple TV"),
-            synopsis = "Batman raises the stakes in his war on crime. With the help of Lt. Jim Gordon and District Attorney Harvey Dent, Batman sets out to dismantle the remaining criminal organizations that plague the streets.",
-            poster = "https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg",
-            director = "Christopher Nolan",
-            cast = listOf("Christian Bale", "Heath Ledger", "Aaron Eckhart", "Michael Caine")
-        ),
-        MediaItem(
-            id = "m_872585",
-            tmdbId = 872585,
-            title = "Oppenheimer",
-            type = "Movie",
-            year = 2023,
-            duration = "3h 0m",
-            rating = 8.1,
-            popularity = 96.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama", "History"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "The story of J. Robert Oppenheimer's role in the development of the atomic bomb during World War II.",
-            poster = "https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg",
-            director = "Christopher Nolan",
-            cast = listOf("Cillian Murphy", "Emily Blunt", "Matt Damon", "Robert Downey Jr.")
-        ),
-        MediaItem(
-            id = "m_693134",
-            tmdbId = 693134,
-            title = "Dune: Part Two",
-            type = "Movie",
-            year = 2024,
-            duration = "2h 46m",
-            rating = 8.2,
-            popularity = 95.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Sci-Fi", "Adventure"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "Follow the mythic journey of Paul Atreides as he unites with Chani and the Fremen while on a path of revenge against the conspirators who destroyed his family.",
-            poster = "https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
-            director = "Denis Villeneuve",
-            cast = listOf("Timothee Chalamet", "Zendaya", "Rebecca Ferguson", "Javier Bardem")
-        ),
-        MediaItem(
-            id = "t_1396",
-            tmdbId = 1396,
-            title = "Breaking Bad",
-            type = "Series",
-            year = 2008,
-            duration = "5 Seasons • 62 Episodes",
-            rating = 8.9,
-            popularity = 96.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama", "Crime", "Thriller"),
-            platforms = listOf("Netflix"),
-            synopsis = "Walter White, a New Mexico chemistry teacher, is diagnosed with Stage III cancer and given a prognosis of two years left to live. He chooses to enter a dangerous world of drugs and crime.",
-            poster = "https://image.tmdb.org/t/p/w500/ztkUQFLlC19CCMYHW9o1zWhJRNq.jpg",
-            numberOfSeasons = 5,
-            numberOfEpisodes = 62,
-            cast = listOf("Bryan Cranston", "Aaron Paul", "Anna Gunn", "Giancarlo Esposito")
-        ),
-        MediaItem(
-            id = "t_1399",
-            tmdbId = 1399,
-            title = "Game of Thrones",
-            type = "Series",
-            year = 2011,
-            duration = "8 Seasons • 73 Episodes",
-            rating = 8.4,
-            popularity = 98.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama", "Fantasy", "Action"),
-            platforms = listOf("Disney+ Hotstar", "Apple TV"),
-            synopsis = "Seven noble families fight for control of the mythical land of Westeros. Friction between the houses leads to full-scale war. All while a very ancient evil awakens in the farthest north.",
-            poster = "https://image.tmdb.org/t/p/w500/1XS1oqL89opfnbLl8WnZY1O1uJx.jpg",
-            numberOfSeasons = 8,
-            numberOfEpisodes = 73,
-            cast = listOf("Peter Dinklage", "Lena Headey", "Emilia Clarke", "Kit Harington")
-        ),
-        MediaItem(
-            id = "t_66732",
-            tmdbId = 66732,
-            title = "Stranger Things",
-            type = "Series",
-            year = 2016,
-            duration = "4 Seasons • 34 Episodes",
-            rating = 8.6,
-            popularity = 94.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Sci-Fi", "Drama", "Mystery"),
-            platforms = listOf("Netflix"),
-            synopsis = "When a young boy vanishes, a small town uncovers a mystery involving secret experiments, terrifying supernatural forces and one strange little girl.",
-            poster = "https://image.tmdb.org/t/p/w500/49WJfeN0moxb9IPfGn8AIqMGskD.jpg",
-            numberOfSeasons = 4,
-            numberOfEpisodes = 34,
-            cast = listOf("Millie Bobby Brown", "Finn Wolfhard", "Winona Ryder", "David Harbour")
-        ),
-        MediaItem(
-            id = "m_496243",
-            tmdbId = 496243,
-            title = "Parasite",
-            type = "Movie",
-            year = 2019,
-            duration = "2h 12m",
-            rating = 8.5,
-            popularity = 88.0,
-            trending = true,
-            originalLanguage = "ko",
-            country = "South Korea",
-            genres = listOf("Comedy", "Thriller", "Drama"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "All unemployed, Ki-taek's family takes peculiar interest in the wealthy and glamorous Parks for their livelihood until they get entangled in an unexpected incident.",
-            poster = "https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg",
-            director = "Bong Joon-ho",
-            cast = listOf("Song Kang-ho", "Lee Sun-kyun", "Cho Yeo-jeong", "Choi Woo-shik")
-        ),
-        MediaItem(
-            id = "m_569094",
-            tmdbId = 569094,
-            title = "Spider-Man: Across the Spider-Verse",
-            type = "Movie",
-            year = 2023,
-            duration = "2h 20m",
-            rating = 8.4,
-            popularity = 91.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Animation", "Action", "Adventure", "Sci-Fi"),
-            platforms = listOf("Netflix", "Prime Video"),
-            synopsis = "After reuniting with Gwen Stacy, Brooklyn's full-time, friendly neighborhood Spider-Man is catapulted across the Multiverse.",
-            poster = "https://image.tmdb.org/t/p/w500/8Vt6mWEReuy4Of61Lnj5Xj704m8.jpg",
-            director = "Joaquim Dos Santos",
-            cast = listOf("Shameik Moore", "Hailee Steinfeld", "Oscar Isaac", "Daniel Kaluuya")
-        ),
-        MediaItem(
-            id = "m_550",
-            tmdbId = 550,
-            title = "Fight Club",
-            type = "Movie",
-            year = 1999,
-            duration = "2h 19m",
-            rating = 8.4,
-            popularity = 86.0,
-            trending = false,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama", "Thriller"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy.",
-            poster = "https://image.tmdb.org/t/p/w500/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
-            director = "David Fincher",
-            cast = listOf("Brad Pitt", "Edward Norton", "Helena Bonham Carter")
-        ),
-        MediaItem(
-            id = "m_680",
-            tmdbId = 680,
-            title = "Pulp Fiction",
-            type = "Movie",
-            year = 1994,
-            duration = "2h 34m",
-            rating = 8.5,
-            popularity = 88.0,
-            trending = false,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Thriller", "Crime"),
-            platforms = listOf("Prime Video", "Apple TV"),
-            synopsis = "A burger-loving hit man, his philosophical partner, a drug-addled gangster's moll and a washed-up boxer converge in four tales of violence and redemption.",
-            poster = "https://image.tmdb.org/t/p/w500/d5iIlFn5s0ImszYzBPb8JPIfbXD.jpg",
-            director = "Quentin Tarantino",
-            cast = listOf("John Travolta", "Samuel L. Jackson", "Uma Thurman", "Bruce Willis")
-        ),
-        MediaItem(
-            id = "t_76331",
-            tmdbId = 76331,
-            title = "Succession",
-            type = "Series",
-            year = 2018,
-            duration = "4 Seasons • 39 Episodes",
-            rating = 8.5,
-            popularity = 92.0,
-            trending = true,
-            originalLanguage = "en",
-            country = "United States",
-            genres = listOf("Drama"),
-            platforms = listOf("Disney+ Hotstar"),
-            synopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their aging father steps down from the company.",
-            poster = "https://image.tmdb.org/t/p/w500/7udW4F6egq9zN1r1GgWzZ4eX987.jpg",
-            numberOfSeasons = 4,
-            numberOfEpisodes = 39,
-            cast = listOf("Brian Cox", "Jeremy Strong", "Sarah Snook", "Kieran Culkin")
-        )
-    )
+    fun getCuratedFallbacks(): List<MediaItem> = CuratedCatalogData.getAllCuratedMedia()
 
     fun getAllLocalMedia(): List<MediaItem> {
         val pool = mutableMapOf<String, MediaItem>()
@@ -659,12 +419,10 @@ class CatalogRepository {
         val prefixMatches = mutableListOf<MediaItem>()
         val containsMatches = mutableListOf<MediaItem>()
         val secondaryMatches = mutableListOf<MediaItem>()
-
         val queryLower = trimmed.lowercase()
 
         for (item in allPool) {
             val titleLower = item.title.lowercase()
-
             if (titleLower.startsWith(queryLower)) {
                 prefixMatches.add(item)
             } else if (titleLower.contains(queryLower)) {
@@ -773,7 +531,6 @@ class CatalogRepository {
                 }
             }
 
-            // Combine remote with local, prioritizing prefix matches on the query
             val combined = (remoteResults + localResults).distinctBy { it.id }
             val queryLower = trimmed.lowercase()
 

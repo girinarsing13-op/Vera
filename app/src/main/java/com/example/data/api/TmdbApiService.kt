@@ -16,19 +16,39 @@ interface TmdbApiService {
     suspend fun discoverMovies(
         @Query("api_key") apiKey: String = "3fd2be6f0c70a2a598f084ddfb75487c",
         @Query("page") page: Int,
-        @Query("region") region: String?,
-        @Query("with_watch_providers") withProviders: String?,
-        @Query("watch_region") watchRegion: String?,
-        @Query("with_original_language") withLanguage: String?
+        @Query("sort_by") sortBy: String? = null,
+        @Query("vote_count.gte") voteCountGte: Int? = null,
+        @Query("primary_release_date.gte") releaseDateGte: String? = null,
+        @Query("primary_release_date.lte") releaseDateLte: String? = null,
+        @Query("region") region: String? = null,
+        @Query("with_watch_providers") withProviders: String? = null,
+        @Query("watch_region") watchRegion: String? = null,
+        @Query("with_original_language") withLanguage: String? = null
+    ): TmdbDiscoverResponse<TmdbMovieResult>
+
+    @GET("3/movie/top_rated")
+    suspend fun getTopRatedMovies(
+        @Query("api_key") apiKey: String = "3fd2be6f0c70a2a598f084ddfb75487c",
+        @Query("page") page: Int = 1,
+        @Query("region") region: String? = null
+    ): TmdbDiscoverResponse<TmdbMovieResult>
+
+    @GET("3/movie/popular")
+    suspend fun getPopularMovies(
+        @Query("api_key") apiKey: String = "3fd2be6f0c70a2a598f084ddfb75487c",
+        @Query("page") page: Int = 1,
+        @Query("region") region: String? = null
     ): TmdbDiscoverResponse<TmdbMovieResult>
 
     @GET("3/discover/tv")
     suspend fun discoverTv(
         @Query("api_key") apiKey: String = "3fd2be6f0c70a2a598f084ddfb75487c",
         @Query("page") page: Int,
-        @Query("with_watch_providers") withProviders: String?,
-        @Query("watch_region") watchRegion: String?,
-        @Query("with_original_language") withLanguage: String?
+        @Query("sort_by") sortBy: String? = null,
+        @Query("vote_count.gte") voteCountGte: Int? = null,
+        @Query("with_watch_providers") withProviders: String? = null,
+        @Query("watch_region") watchRegion: String? = null,
+        @Query("with_original_language") withLanguage: String? = null
     ): TmdbDiscoverResponse<TmdbTvResult>
 
     @GET("3/movie/{id}")

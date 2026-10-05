@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import java.net.URLEncoder
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -28,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -410,8 +415,8 @@ fun ResultScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "WHY VEYRA PICKED THIS",
-                                    fontSize = 10.sp,
+                                    text = "Why Vera Picked This",
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = VeyraTextMuted,
                                     letterSpacing = 1.sp
@@ -626,28 +631,75 @@ fun ResultScreen(
                                     }
                                 }
                             } else {
-                                // Honest unavailable state when no providers returned for India
+                                // Fallback option: Search on Google / Chrome with exact title, year and media type
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(VeyraBlack)
-                                        .border(1.dp, VeyraBorderSubtle, RoundedCornerShape(12.dp))
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(VeyraCardElevated)
+                                        .border(1.dp, VeyraBorder, RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            val typeTerm = if (item.type.equals("Series", ignoreCase = true)) "series" else "movie"
+                                            val query = "${item.title} ${item.year} $typeTerm"
+                                            val encodedQuery = try {
+                                                URLEncoder.encode(query, "UTF-8")
+                                            } catch (_: Exception) {
+                                                query.replace(" ", "+")
+                                            }
+                                            val searchUrl = "https://www.google.com/search?q=$encodedQuery"
+                                            try {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
+                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(VeyraBlack)
+                                                .border(1.dp, VeyraBorderSubtle, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = null,
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = "Search on Google / Chrome",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = VeyraWhite
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "${item.title} (${item.year})",
+                                                fontSize = 11.sp,
+                                                color = VeyraTextSecondary
+                                            )
+                                        }
+                                    }
                                     Icon(
-                                        imageVector = Icons.Default.Info,
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                         contentDescription = null,
                                         tint = VeyraTextMuted,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Not currently available for streaming in India",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = VeyraTextSecondary
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }

@@ -734,7 +734,7 @@ fun WhyThisModal(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Why Veyra Picked This",
+                    text = "Why Vera Picked This",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = VeyraWhite
@@ -752,7 +752,7 @@ fun WhyThisModal(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "VEYRA picked \"${item.title}\" because it matches your selected active filters:",
+                        text = "Vera picked \"${item.title}\" because it matches your selected active filters:",
                         fontSize = 12.sp,
                         color = VeyraTextSecondary,
                         lineHeight = 18.sp
@@ -829,7 +829,7 @@ fun NoResultsModal(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "No titles found for these active filter combinations. Try adjusting your filters or let Veyra surprise you.",
+                    text = "No titles found for these active filter combinations. Try adjusting your filters or let Vera surprise you.",
                     fontSize = 12.sp,
                     color = VeyraTextSecondary,
                     textAlign = TextAlign.Center,

@@ -59,7 +59,7 @@ private data class CelestialMote(
  * - Floating celestial motes drifting with subtle parallax
  * - Volumetric breathing ambient glow
  * - Horizontal cinematic anamorphic light flare
- * - Elegant letter-spaced VERA branding with subtle floating breath
+ * - Elegant letter-spaced Vera branding with subtle floating breath
  * - Laser-smooth glowing progress bar
  */
 @Composable
@@ -188,9 +188,9 @@ fun BrandIntroOverlay(
                     translationY = (1f - entranceAlpha.value) * 16f
                 }
         ) {
-            // Compact Logo: <div class="mlogo">VERA</div>
+            // Compact Logo: <div class="mlogo">Vera</div>
             Text(
-                text = "VERA",
+                text = "Vera",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Black,
                 color = VeyraWhite,
